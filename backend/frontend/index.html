@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kwiatki Control</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header class="container">
+        <h1>Kwiatki Control Panel</h1>
+    </header>
+
+    <main class="container">
+        <!-- Login/Register Section -->
+        <section id="auth-section" class="card">
+            <h2>Authentication</h2>
+            <div id="auth-forms">
+                <!-- Login Form -->
+                <form id="login-form">
+                    <h3>Login</h3>
+                    <label for="login-email">Email:</label>
+                    <input type="email" id="login-email" required>
+                    <label for="login-password">Password:</label>
+                    <input type="password" id="login-password" required>
+                    <button type="submit">Login</button>
+                    <p id="login-error" class="error-message"></p>
+                </form>
+                <hr>
+                <!-- Register Form -->
+                <form id="register-form">
+                    <h3>Register</h3>
+                    <label for="register-email">Email:</label>
+                    <input type="email" id="register-email" required>
+                    <label for="register-password">Password:</label>
+                    <input type="password" id="register-password" required>
+                    <button type="submit">Register</button>
+                    <p id="register-error" class="error-message"></p>
+                    <p id="register-success" class="success-message"></p>
+                </form>
+            </div>
+        </section>
+
+        <!-- Plant Management Section (Hidden initially) -->
+        <section id="plant-section" class="card hidden">
+            <h2>Your Plants</h2>
+            <div id="user-info">
+                Logged in as: <span id="user-email-display"></span>
+                <button id="logout-button">Logout</button>
+            </div>
+            <div id="plant-list">
+                <!-- Plant cards will be inserted here -->
+            </div>
+             <hr>
+            <h3>Add New Plant</h3>
+            <form id="add-plant-form">
+                <label for="plant-name">Plant Name:</label>
+                <input type="text" id="plant-name" required>
+                <button type="submit">Add Plant</button>
+                <p id="add-plant-error" class="error-message"></p>
+            </form>
+        </section>
+
+    </main>
+
+    <footer class="container">
+        <p>&copy; 2023 Kwiatki Inc.</p>
+    </footer>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
