@@ -2,3 +2,4 @@ flask
 flask-mqtt
 flask-sqlalchemy
 paho-mqtt
+psycopg2-binary # Add PostgreSQL driver

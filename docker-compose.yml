@@ -8,14 +8,23 @@ services:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
       - mosquitto-data:/mosquitto/data
 
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=kwiatki_user
+      - POSTGRES_PASSWORD=kwiatki_secret_pw
+      - POSTGRES_DB=kwiatki_db
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports: ["5432:5432"]
+
   backend:
     build: ./backend
     environment:
       - MQTT_BROKER_URL=broker
-    depends_on: [broker]
+      - DATABASE_URL=postgresql://kwiatki_user:kwiatki_secret_pw@db/kwiatki_db
+    depends_on: [broker, db]
     ports: ["8000:8000"]
-    volumes:
-      - backend-data:/app  # żeby SQLite przetrwał restarty
 
   sim:
     build: ./sim
@@ -25,4 +34,4 @@ services:
 
 volumes:
   mosquitto-data:
-  backend-data:
+  postgres-data:
