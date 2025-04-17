@@ -7,8 +7,9 @@ from flask_jwt_extended import JWTManager, create_access_token, jwt_required, ge
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 FRONTEND_FOLDER = os.path.join(BASE_DIR, 'frontend')
+STATIC_FOLDER = os.path.join(FRONTEND_FOLDER, 'static')  # Define static folder path
 
-app = Flask(__name__, static_folder=FRONTEND_FOLDER)
+app = Flask(__name__, static_folder=STATIC_FOLDER, static_url_path='/static')
 
 app.config.update(
     SQLALCHEMY_DATABASE_URI=os.getenv("DATABASE_URL", "sqlite:///fallback.db"),
@@ -111,6 +112,15 @@ def login():
 
 # --- REST API -------------------------------------------------------
 
+@app.route("/api/me", methods=["GET"])
+@jwt_required()
+def get_me():
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    if not user:
+        return jsonify({"msg": "User not found"}), 404
+    return jsonify({"id": user.id, "email": user.email})
+
 @app.route("/api/plants", methods=["GET"])
 @jwt_required()
 def get_user_plants():
@@ -178,13 +188,9 @@ def manual_water(plant_id):
 
 # --- Frontend Serving Routes ----------------------------------------
 
-@app.route('/', defaults={'path': ''})
-@app.route('/<path:path>')
-def serve_frontend(path):
-    if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
-        return send_from_directory(app.static_folder, path)
-    else:
-        return send_from_directory(app.static_folder, 'index.html')
+@app.route('/')
+def serve_index():
+    return send_from_directory(FRONTEND_FOLDER, 'index.html')
 
 # -------------------------------------------------------------------
 
