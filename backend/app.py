@@ -1,11 +1,15 @@
 import os, json
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_mqtt import Mqtt
 from models import db, Measurement, Plant, User
 from flask_bcrypt import Bcrypt
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 
-app = Flask(__name__)
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+FRONTEND_FOLDER = os.path.join(BASE_DIR, 'frontend')
+
+app = Flask(__name__, static_folder=FRONTEND_FOLDER)
+
 app.config.update(
     SQLALCHEMY_DATABASE_URI=os.getenv("DATABASE_URL", "sqlite:///fallback.db"),
     SQLALCHEMY_TRACK_MODIFICATIONS=False,
@@ -171,6 +175,16 @@ def manual_water(plant_id):
                  json.dumps({"duration_ms": duration}), qos=1)
     print(f"Manual water command sent to plant {plant_id} for {duration}ms by user {current_user_id}")
     return {"status": "queued"}, 202
+
+# --- Frontend Serving Routes ----------------------------------------
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_frontend(path):
+    if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
+        return send_from_directory(app.static_folder, path)
+    else:
+        return send_from_directory(app.static_folder, 'index.html')
 
 # -------------------------------------------------------------------
 
