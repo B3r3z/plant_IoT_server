@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  broker:
+    image: eclipse-mosquitto:2
+    ports: ["1883:1883"]
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mosquitto-data:/mosquitto/data
+
+  backend:
+    build: ./backend
+    environment:
+      - MQTT_BROKER_URL=broker
+    depends_on: [broker]
+    ports: ["8000:8000"]
+    volumes:
+      - backend-data:/app  # żeby SQLite przetrwał restarty
+
+  sim:
+    build: ./sim
+    environment:
+      - MQTT_HOST=broker
+    depends_on: [broker]
+
+volumes:
+  mosquitto-data:
+  backend-data:
