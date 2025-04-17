@@ -22,6 +22,19 @@ mqtt = Mqtt(app)
 bcrypt = Bcrypt(app)
 jwt = JWTManager(app)
 
+# --- Debugging: Log Headers ---
+@app.before_request
+def log_request_info():
+    # Avoid logging for static files to reduce noise
+    if request.path.startswith('/static'):
+        return
+    # Use app.logger for better practice in Flask, but print works too
+    print(f"Incoming Request: {request.method} {request.path}")
+    # Specifically check for the Authorization header
+    auth_header = request.headers.get('Authorization')
+    print(f"Authorization Header: {auth_header}")
+    # You can print all headers if needed: print(f"Headers: {request.headers}")
+
 # --- MQTT callbacks -------------------------------------------------
 
 @mqtt.on_connect()
@@ -46,7 +59,7 @@ def handle_message(_, __, msg):
         return
 
     with app.app_context():
-        plant = Plant.query.get(plant_id)
+        plant = db.session.get(Plant, plant_id)
         if plant is None:
             print(f"Received measurement for unknown plant ID: {plant_id}")
             return
@@ -116,7 +129,7 @@ def login():
 @jwt_required()
 def get_me():
     current_user_id = get_jwt_identity()
-    user = User.query.get(current_user_id)
+    user = db.session.get(User, current_user_id)
     if not user:
         return jsonify({"msg": "User not found"}), 404
     return jsonify({"id": user.id, "email": user.email})
@@ -125,7 +138,7 @@ def get_me():
 @jwt_required()
 def get_user_plants():
     current_user_id = get_jwt_identity()
-    user = User.query.get(current_user_id)
+    user = db.session.get(User, current_user_id)
     if not user:
         return jsonify({"msg": "User not found"}), 404
 
@@ -142,7 +155,7 @@ def create_plant():
     if not name:
         return jsonify({"error": "Plant name is required"}), 400
 
-    user = User.query.get(current_user_id)
+    user = db.session.get(User, current_user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
 

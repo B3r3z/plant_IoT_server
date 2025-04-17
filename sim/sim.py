@@ -3,7 +3,7 @@ import json, random, time, os, paho.mqtt.client as mqtt
 PLANT_ID = 1
 HOST = os.getenv("MQTT_HOST", "broker")
 
-client = mqtt.Client("sim‑esp32")
+client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "sim‑esp32")
 client.connect(HOST, 1883, 60)
 
 while True:
