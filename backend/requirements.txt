@@ -3,3 +3,5 @@ flask-mqtt
 flask-sqlalchemy
 paho-mqtt
 psycopg2-binary # Add PostgreSQL driver
+Flask-Bcrypt # Add Bcrypt
+Flask-JWT-Extended # Add JWT

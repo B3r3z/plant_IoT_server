@@ -3,13 +3,9 @@ db = SQLAlchemy()
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(128), nullable=False)
     plants = db.relationship('Plant', backref='owner', lazy=True)
-#TODO : Add password hashing and authentication, USE flask_bcrypt or similar
-#TODO : Add user registration and login endpoints
-#TODO : EMAIL 
 class Plant(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)

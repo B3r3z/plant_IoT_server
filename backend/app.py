@@ -1,16 +1,21 @@
 import os, json
 from flask import Flask, request, jsonify
 from flask_mqtt import Mqtt
-from models import db, Measurement, Plant
+from models import db, Measurement, Plant, User
+from flask_bcrypt import Bcrypt
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 
 app = Flask(__name__)
 app.config.update(
     SQLALCHEMY_DATABASE_URI=os.getenv("DATABASE_URL", "sqlite:///fallback.db"),
     SQLALCHEMY_TRACK_MODIFICATIONS=False,
     MQTT_BROKER_URL=os.getenv("MQTT_BROKER_URL", "localhost"),
+    JWT_SECRET_KEY=os.getenv("JWT_SECRET", "super-secret-key-please-change")
 )
 db.init_app(app)
 mqtt = Mqtt(app)
+bcrypt = Bcrypt(app)
+jwt = JWTManager(app)
 
 # --- MQTT callbacks -------------------------------------------------
 
@@ -56,13 +61,88 @@ def handle_message(_, __, msg):
             mqtt.publish(f"plant/{plant_id}/cmd/water",
                          json.dumps({"duration_ms": 5000}), qos=1)
 
+# --- Auth Endpoints -------------------------------------------------
+
+@app.route("/auth/register", methods=["POST"])
+def register():
+    data = request.json
+    email = data.get("email")
+    password = data.get("password")
+
+    if not email or not password:
+        return jsonify({"msg": "Email and password required"}), 400
+
+    user_exists = User.query.filter_by(email=email).first()
+    if user_exists:
+        return jsonify({"msg": "Email already registered"}), 409
+
+    pw_hash = bcrypt.generate_password_hash(password).decode('utf-8')
+    new_user = User(email=email, password_hash=pw_hash)
+    try:
+        db.session.add(new_user)
+        db.session.commit()
+        return jsonify({"msg": "User registered successfully"}), 201
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error during registration: {e}")
+        return jsonify({"msg": "Registration failed"}), 500
+
+
+@app.route("/auth/login", methods=["POST"])
+def login():
+    data = request.json
+    email = data.get("email")
+    password = data.get("password")
+
+    if not email or not password:
+        return jsonify({"msg": "Email and password required"}), 400
+
+    user = User.query.filter_by(email=email).first()
+    if user and bcrypt.check_password_hash(user.password_hash, password):
+        access_token = create_access_token(identity=user.id)
+        return jsonify(access_token=access_token)
+    else:
+        return jsonify({"msg": "Bad email or password"}), 401
+
 # --- REST API -------------------------------------------------------
 
+@app.route("/api/plants", methods=["GET"])
+@jwt_required()
+def get_user_plants():
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    if not user:
+        return jsonify({"msg": "User not found"}), 404
+
+    plants = [{"id": p.id, "name": p.name} for p in user.plants]
+    return jsonify(plants)
+
+@app.route("/api/plants", methods=["POST"])
+@jwt_required()
+def create_plant():
+    current_user_id = get_jwt_identity()
+    data = request.get_json()
+    name = data.get("name")
+
+    if not name:
+        return jsonify({"error": "Plant name is required"}), 400
+
+    user = User.query.get(current_user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    new_plant = Plant(name=name, user_id=current_user_id)
+    db.session.add(new_plant)
+    db.session.commit()
+    return jsonify({"id": new_plant.id, "name": new_plant.name, "user_id": new_plant.user_id}), 201
+
 @app.route("/api/measurements/<int:plant_id>")
+@jwt_required()
 def get_measurements(plant_id):
-    plant = Plant.query.get(plant_id)
+    current_user_id = get_jwt_identity()
+    plant = Plant.query.filter_by(id=plant_id, user_id=current_user_id).first()
     if plant is None:
-        return jsonify({"error": "Plant not found"}), 404
+        return jsonify({"error": "Plant not found or access denied"}), 404
 
     rows = (Measurement.query
             .filter_by(plant_id=plant_id)
@@ -75,10 +155,12 @@ def get_measurements(plant_id):
     } for r in rows])
 
 @app.route("/api/plants/<int:plant_id>/water", methods=["POST"])
+@jwt_required()
 def manual_water(plant_id):
-    plant = Plant.query.get(plant_id)
+    current_user_id = get_jwt_identity()
+    plant = Plant.query.filter_by(id=plant_id, user_id=current_user_id).first()
     if plant is None:
-        return jsonify({"error": "Plant not found"}), 404
+        return jsonify({"error": "Plant not found or access denied"}), 404
 
     duration = request.json.get("duration_ms", 5000)
     if not isinstance(duration, int) or duration <= 0:
@@ -86,7 +168,7 @@ def manual_water(plant_id):
 
     mqtt.publish(f"plant/{plant_id}/cmd/water",
                  json.dumps({"duration_ms": duration}), qos=1)
-    print(f"Manual water command sent to plant {plant_id} for {duration}ms")
+    print(f"Manual water command sent to plant {plant_id} for {duration}ms by user {current_user_id}")
     return {"status": "queued"}, 202
 
 # -------------------------------------------------------------------
