@@ -22,12 +22,19 @@ def handle_connect(*_):
 def handle_message(_, __, msg):
     plant_id = int(msg.topic.split("/")[1])
     data = json.loads(msg.payload)
-    row  = Measurement(plant_id=plant_id, **data)
-    db.session.add(row)
-    db.session.commit()
-    if data["moisture"] < 30:
-        mqtt.publish(f"plant/{plant_id}/cmd/water",
-                     json.dumps({"duration_ms": 5000}), qos=1, retain=True)
+    row = Measurement(
+        plant_id=plant_id,
+        ts=data.get("timestamp"),
+        moisture=data.get("moisture"),
+        temperature=data.get("temperature")
+    )
+    if row.ts is not None and row.moisture is not None and row.temperature is not None:
+        with app.app_context():
+            db.session.add(row)
+            db.session.commit()
+            if data["moisture"] < 30:
+                mqtt.publish(f"plant/{plant_id}/cmd/water",
+                             json.dumps({"duration_ms": 5000}), qos=1)
 
 # --- REST API -------------------------------------------------------
 
@@ -47,7 +54,7 @@ def get_measurements(plant_id):
 def manual_water(plant_id):
     duration = request.json.get("duration_ms", 5000)
     mqtt.publish(f"plant/{plant_id}/cmd/water",
-                 json.dumps({"duration_ms": duration}), qos=1, retain=True)
+                 json.dumps({"duration_ms": duration}), qos=1)
     return {"status": "queued"}, 202
 
 # -------------------------------------------------------------------
