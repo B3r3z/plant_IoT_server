@@ -1,0 +1,27 @@
+@startuml
+!define primary_key(x) <u>x</u>
+!define foreign_key(x) <i>x</i>
+
+entity User {
+    primary_key(id): Integer
+    email: String (unique, not null)
+    password_hash: String (not null)
+}
+
+entity Plant {
+    primary_key(id): Integer
+    name: String (not null)
+    foreign_key(user_id): Integer (not null)
+}
+
+entity Measurement {
+    primary_key(id): Integer
+    foreign_key(plant_id): Integer (not null)
+    ts: Integer (indexed)
+    moisture: Float
+    temperature: Float
+}
+
+User ||--o{ Plant : owns
+Plant ||--o{ Measurement : records
+@enduml
