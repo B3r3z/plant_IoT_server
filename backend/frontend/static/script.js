@@ -13,6 +13,9 @@ const userEmailDisplay = document.getElementById('user-email-display'); // Assum
 
 const API_BASE_URL = ''; // Relative URLs work fine when served from Flask
 
+// Store chart instances { plantId: { humidityChart: Chart | null, temperatureChart: Chart | null } }
+let plantCharts = {};
+
 // --- Helper Functions ---
 
 function setToken(token) {
@@ -64,6 +67,21 @@ function showPlantSection() {
     authSection.classList.add('hidden');
     plantSection.classList.remove('hidden');
     fetchPlants(); // Fetch plants when showing the section
+}
+
+function logout() {
+    removeToken();
+    plantListDiv.innerHTML = ''; // Clear plant list
+    userEmailDisplay.textContent = '';
+    
+    // Destroy all charts on logout
+    Object.values(plantCharts).forEach(charts => {
+        charts.humidityChart?.destroy();
+        charts.temperatureChart?.destroy();
+    });
+    plantCharts = {}; // Clear the chart store
+    
+    showAuthSection();
 }
 
 // --- API Call Functions ---
@@ -145,13 +163,6 @@ async function handleRegister(event) {
     }
 }
 
-function logout() {
-    removeToken();
-    plantListDiv.innerHTML = ''; // Clear plant list
-    userEmailDisplay.textContent = '';
-    showAuthSection();
-}
-
 // --- Plant Management Logic ---
 
 async function fetchPlants() {
@@ -171,10 +182,224 @@ async function fetchPlants() {
 async function fetchMeasurements(plantId) {
     const measurements = await apiCall(`/api/measurements/${plantId}`, 'GET', null, true);
     if (measurements && !measurements.error) {
-        return measurements;
+        // Sort measurements by timestamp ascending (oldest first) for charting
+        // Since the backend returns in descending order (newest first), we need to reverse
+        return measurements.reverse();
     }
     console.error(`Failed to fetch measurements for plant ${plantId}`);
     return []; // Return empty array on failure
+}
+
+// Function to format timestamp for chart labels
+function formatChartLabel(timestamp) {
+    const date = new Date(timestamp * 1000);
+    return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+
+// Function to render or update charts for a specific plant
+function renderCharts(plantId, measurements) {
+    const humidityCanvas = document.getElementById(`humidity-chart-${plantId}`);
+    const temperatureCanvas = document.getElementById(`temperature-chart-${plantId}`);
+    const chartContainer = document.getElementById(`chart-container-${plantId}`);
+
+    if (!humidityCanvas || !temperatureCanvas || !chartContainer) {
+        console.error(`Canvas elements or container not found for plant ${plantId}`);
+        return;
+    }
+
+    // Clear previous "No data" messages if any
+    const noDataMsgId = `no-data-${plantId}`;
+    const existingNoDataMsg = chartContainer.querySelector(`#${noDataMsgId}`);
+    if (existingNoDataMsg) {
+        existingNoDataMsg.remove();
+    }
+
+    // Handle case with no measurements
+    if (!measurements || measurements.length === 0) {
+        console.log(`No measurement data for plant ${plantId}. Clearing charts.`);
+        
+        // Destroy existing chart instances if they exist
+        if (plantCharts[plantId]) {
+            plantCharts[plantId].humidityChart?.destroy();
+            plantCharts[plantId].temperatureChart?.destroy();
+        }
+        plantCharts[plantId] = { humidityChart: null, temperatureChart: null };
+
+        // Display a "No data" message
+        const noDataMessage = document.createElement('p');
+        noDataMessage.id = noDataMsgId;
+        noDataMessage.textContent = 'No measurement data available to display charts.';
+        noDataMessage.style.textAlign = 'center';
+        chartContainer.insertBefore(noDataMessage, humidityCanvas);
+
+        humidityCanvas.style.display = 'none';
+        temperatureCanvas.style.display = 'none';
+        return;
+    } else {
+        // Ensure canvases are visible if we have data
+        humidityCanvas.style.display = 'block';
+        temperatureCanvas.style.display = 'block';
+    }
+
+    // Prepare data for charts
+    const labels = measurements.map(m => formatChartLabel(m.ts));
+    const humidityData = measurements.map(m => m.moisture);
+    const temperatureData = measurements.map(m => m.temperature);
+
+    // Check if charts already exist for this plant
+    const existingCharts = plantCharts[plantId];
+
+    // Render or Update Humidity Chart
+    if (existingCharts?.humidityChart) {
+        // Update existing chart
+        existingCharts.humidityChart.data.labels = labels;
+        existingCharts.humidityChart.data.datasets[0].data = humidityData;
+        existingCharts.humidityChart.update();
+        console.log(`Updated humidity chart for plant ${plantId}`);
+    } else {
+        // Create new chart
+        const humidityChart = new Chart(humidityCanvas.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Moisture (%)',
+                    data: humidityData,
+                    borderColor: 'rgb(54, 162, 235)',
+                    backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                    tension: 0.1,
+                    pointRadius: 2,
+                    fill: true,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: true, position: 'top' } },
+                scales: {
+                    y: { beginAtZero: false, suggestedMax: 100, title: { display: true, text: 'Moisture (%)' } },
+                    x: { title: { display: true, text: 'Time' } }
+                }
+            }
+        });
+        if (!plantCharts[plantId]) plantCharts[plantId] = {};
+        plantCharts[plantId].humidityChart = humidityChart;
+    }
+
+    // Render or Update Temperature Chart
+    if (existingCharts?.temperatureChart) {
+        // Update existing chart
+        existingCharts.temperatureChart.data.labels = labels;
+        existingCharts.temperatureChart.data.datasets[0].data = temperatureData;
+        existingCharts.temperatureChart.update();
+    } else {
+        // Create new chart
+        const temperatureChart = new Chart(temperatureCanvas.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Temperature (°C)',
+                    data: temperatureData,
+                    borderColor: 'rgb(255, 99, 132)',
+                    backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                    tension: 0.1,
+                    pointRadius: 2,
+                    fill: true,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: true, position: 'top' } },
+                scales: {
+                    y: { beginAtZero: false, title: { display: true, text: 'Temperature (°C)' } },
+                    x: { title: { display: true, text: 'Time' } }
+                }
+            }
+        });
+        if (!plantCharts[plantId]) plantCharts[plantId] = {};
+        plantCharts[plantId].temperatureChart = temperatureChart;
+    }
+}
+
+async function renderPlants(plants) {
+    plantListDiv.innerHTML = ''; // Clear previous list or loading message
+    if (plants.length === 0) {
+        plantListDiv.innerHTML = '<p>No plants found. Add one below!</p>';
+        return;
+    }
+
+    // Clear chart instances for plants that might have been removed
+    const currentPlantIds = new Set(plants.map(p => p.id));
+    Object.keys(plantCharts).forEach(plantId => {
+        if (!currentPlantIds.has(parseInt(plantId))) {
+            plantCharts[plantId].humidityChart?.destroy();
+            plantCharts[plantId].temperatureChart?.destroy();
+            delete plantCharts[plantId];
+        }
+    });
+
+    for (const plant of plants) {
+        const plantCard = document.createElement('div');
+        plantCard.className = 'plant-card';
+        plantCard.id = `plant-card-${plant.id}`;
+
+        // Create the plant card with toggle button and chart container
+        plantCard.innerHTML = `
+            <div class="plant-info" data-plant-id="${plant.id}">
+                <h4>${plant.name} (ID: ${plant.id})</h4>
+                <div class="plant-measurements" id="measurements-${plant.id}">Loading measurements...</div>
+            </div>
+            <button class="toggle-chart-button" data-plant-id="${plant.id}">Show Charts</button>
+            <div class="chart-container hidden" id="chart-container-${plant.id}">
+                <p><strong>Measurement History:</strong></p>
+                <div class="chart-wrapper">
+                    <canvas id="humidity-chart-${plant.id}"></canvas>
+                </div>
+                <div class="chart-wrapper">
+                    <canvas id="temperature-chart-${plant.id}"></canvas>
+                </div>
+            </div>
+            <button class="water-button" data-plant-id="${plant.id}">Manual Water (5s)</button>
+        `;
+        plantListDiv.appendChild(plantCard);
+
+        // Add event listener for the water button
+        const waterButton = plantCard.querySelector(`.water-button[data-plant-id="${plant.id}"]`);
+        waterButton.addEventListener('click', () => handleManualWater(plant.id));
+
+        // Add event listener for the toggle chart button
+        const toggleChartButton = plantCard.querySelector(`.toggle-chart-button[data-plant-id="${plant.id}"]`);
+        toggleChartButton.addEventListener('click', async (e) => {
+            const button = e.target;
+            const chartContainer = document.getElementById(`chart-container-${plant.id}`);
+            const isHidden = chartContainer.classList.toggle('hidden');
+            
+            // Update button text
+            button.textContent = isHidden ? 'Show Charts' : 'Hide Charts';
+            
+            // If we just revealed the container, load/update the charts
+            if (!isHidden) {
+                console.log(`Revealing charts for plant ${plant.id}`);
+                const measurements = await fetchMeasurements(plant.id);
+                renderCharts(plant.id, measurements);
+            }
+        });
+
+        // Fetch and display latest measurements
+        const measurements = await fetchMeasurements(plant.id);
+        const measurementsDiv = document.getElementById(`measurements-${plant.id}`);
+        if (measurements.length > 0) {
+            const latest = measurements[measurements.length - 1]; // Get the most recent (now last after reverse)
+            measurementsDiv.innerHTML = `
+                Latest Reading (${new Date(latest.ts * 1000).toLocaleString()}):<br>
+                Moisture: ${latest.moisture}% | Temp: ${latest.temperature}°C
+            `;
+        } else {
+            measurementsDiv.innerHTML = 'No measurements found.';
+        }
+    }
 }
 
 async function handleManualWater(plantId) {
@@ -199,46 +424,6 @@ async function handleManualWater(plantId) {
     }, 2000);
 }
 
-
-async function renderPlants(plants) {
-    plantListDiv.innerHTML = ''; // Clear previous list or loading message
-    if (plants.length === 0) {
-        plantListDiv.innerHTML = '<p>No plants found. Add one below!</p>';
-        return;
-    }
-
-    for (const plant of plants) {
-        const plantCard = document.createElement('div');
-        plantCard.className = 'plant-card';
-        plantCard.innerHTML = `
-            <h4>${plant.name} (ID: ${plant.id})</h4>
-            <div class="plant-measurements" id="measurements-${plant.id}">Loading measurements...</div>
-            <button data-plant-id="${plant.id}">Manual Water (5s)</button>
-        `;
-        plantListDiv.appendChild(plantCard);
-
-        // Add event listener for the water button
-        const waterButton = plantCard.querySelector(`button[data-plant-id="${plant.id}"]`);
-        waterButton.addEventListener('click', () => handleManualWater(plant.id));
-
-
-        // Fetch and display measurements for this plant
-        const measurements = await fetchMeasurements(plant.id);
-        const measurementsDiv = document.getElementById(`measurements-${plant.id}`);
-        if (measurements.length > 0) {
-            const latest = measurements[0]; // Assuming latest is first
-             measurementsDiv.innerHTML = `
-                Latest Reading (ts: ${latest.ts}):<br>
-                Moisture: ${latest.moisture}% <br>
-                Temp: ${latest.temperature}°C
-            `;
-        } else {
-            measurementsDiv.innerHTML = 'No measurements found.';
-        }
-    }
-}
-
-
 async function handleAddPlant(event) {
     event.preventDefault();
     clearErrors();
@@ -254,7 +439,6 @@ async function handleAddPlant(event) {
         showAddPlantError(result?.data?.error || 'Failed to add plant.');
     }
 }
-
 
 // --- Initialization ---
 
