@@ -28,6 +28,19 @@ function getToken() {
 
 function removeToken() {
     localStorage.removeItem('jwtToken');
+    // Also remove cached email if we're storing it
+    localStorage.removeItem('userEmail');
+}
+
+// New function to cache user email
+function setUserEmail(email) {
+    localStorage.setItem('userEmail', email);
+    userEmailDisplay.textContent = email;
+}
+
+// New function to get cached email
+function getUserEmail() {
+    return localStorage.getItem('userEmail');
 }
 
 function showLoginError(message) {
@@ -128,6 +141,15 @@ async function apiCall(endpoint, method = 'GET', body = null, requiresAuth = fal
 
 // --- Authentication Logic ---
 
+async function fetchUserDetails() {
+    const result = await apiCall('/api/me', 'GET', null, true);
+    if (result && !result.error) {
+        setUserEmail(result.email);
+        return result;
+    } 
+    return null;
+}
+
 async function handleLogin(event) {
     event.preventDefault();
     clearErrors();
@@ -138,8 +160,12 @@ async function handleLogin(event) {
 
     if (result && !result.error && result.access_token) {
         setToken(result.access_token);
-        // TODO: Decode token to get user info if needed, or make another API call
-        userEmailDisplay.textContent = email; // Placeholder
+        // Fetch user details to ensure we have the right email
+        await fetchUserDetails();
+        // If API fails, use the email from the login form as fallback
+        if (!getUserEmail()) {
+            setUserEmail(email);
+        }
         showPlantSection();
         loginForm.reset();
     } else {
@@ -450,24 +476,32 @@ function init() {
 
     const token = getToken();
     if (token) {
-        // TODO: Optionally verify token validity with a backend endpoint
-        // For now, assume it's valid and try fetching plants
-        console.log("Token found, attempting to show plant section.");
-        // Need user info - maybe store email in localStorage too after login?
-        // Or add a /api/me endpoint to get user details
-        userEmailDisplay.textContent = "Loading..."; // Placeholder
-        apiCall('/api/plants', 'GET', null, true).then(plants => {
-             if (plants && !plants.error) {
-                 // If fetching plants worked, we are likely logged in
-                 showPlantSection();
-                 // Fetch user details if needed here
-             } else {
-                 // Token might be invalid/expired
-                 console.log("Token invalid or fetching plants failed, showing auth.");
-                 logout(); // Clear invalid token and show login
-             }
-         });
-
+        // Check for cached email first
+        const cachedEmail = getUserEmail();
+        if (cachedEmail) {
+            userEmailDisplay.textContent = cachedEmail;
+        } else {
+            userEmailDisplay.textContent = "Loading..."; // Placeholder
+        }
+        
+        // First, try to get the user details to verify token is valid
+        fetchUserDetails().then(user => {
+            if (user) {
+                console.log("Token valid, user details fetched successfully");
+                showPlantSection();
+            } else {
+                // If we couldn't fetch user details, try plants as fallback
+                console.log("Failed to fetch user details, trying plants as fallback");
+                apiCall('/api/plants', 'GET', null, true).then(plants => {
+                    if (plants && !plants.error) {
+                        showPlantSection();
+                    } else {
+                        console.log("Token invalid or requests failed, showing auth");
+                        logout(); // Clear invalid token and show login
+                    }
+                });
+            }
+        });
     } else {
         console.log("No token found, showing auth section.");
         showAuthSection();
