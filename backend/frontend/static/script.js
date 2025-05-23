@@ -388,12 +388,17 @@ async function renderPlants(plants) {
                 </div>
             </div>
             <button class="water-button" data-plant-id="${plant.id}">Manual Water (5s)</button>
+            <button class="delete-button" data-plant-id="${plant.id}">Delete Plant</button>
         `;
         plantListDiv.appendChild(plantCard);
 
         // Add event listener for the water button
         const waterButton = plantCard.querySelector(`.water-button[data-plant-id="${plant.id}"]`);
         waterButton.addEventListener('click', () => handleManualWater(plant.id));
+
+        // Add event listener for the delete button
+        const deleteButton = plantCard.querySelector(`.delete-button[data-plant-id="${plant.id}"]`);
+        deleteButton.addEventListener('click', () => handleDeletePlant(plant.id, plant.name));
 
         // Add event listener for the toggle chart button
         const toggleChartButton = plantCard.querySelector(`.toggle-chart-button[data-plant-id="${plant.id}"]`);
@@ -450,12 +455,68 @@ async function handleManualWater(plantId) {
     }, 2000);
 }
 
+async function handleDeletePlant(plantId, plantName) {
+    // Confirm deletion with user
+    const confirmed = confirm(`Are you sure you want to delete "${plantName}"?\n\nThis will permanently remove the plant and all its measurement data.`);
+    
+    if (!confirmed) {
+        return;
+    }
+
+    console.log(`Requesting deletion for plant ${plantId}...`);
+    const deleteButton = document.querySelector(`.delete-button[data-plant-id="${plantId}"]`);
+    deleteButton.disabled = true;
+    deleteButton.textContent = 'Deleting...';
+
+    const result = await apiCall(`/api/plants/${plantId}`, 'DELETE', null, true);
+
+    if (result && !result.error) {
+        console.log(`Plant ${plantId} deleted successfully`);
+        
+        // Clean up chart instances for this plant
+        if (plantCharts[plantId]) {
+            plantCharts[plantId].humidityChart?.destroy();
+            plantCharts[plantId].temperatureChart?.destroy();
+            delete plantCharts[plantId];
+        }
+        
+        // Remove the plant card from DOM
+        const plantCard = document.getElementById(`plant-card-${plantId}`);
+        if (plantCard) {
+            plantCard.remove();
+        }
+        
+        // Check if plant list is now empty
+        if (plantListDiv.children.length === 0) {
+            plantListDiv.innerHTML = '<p>No plants found. Add one below!</p>';
+        }
+    } else {
+        console.error(`Failed to delete plant ${plantId}`);
+        alert(`Failed to delete plant "${plantName}". Please try again.`);
+        
+        // Re-enable button on error
+        deleteButton.disabled = false;
+        deleteButton.textContent = 'Delete Plant';
+    }
+}
+
 async function handleAddPlant(event) {
     event.preventDefault();
     clearErrors();
     const name = document.getElementById('plant-name').value;
+    const plantIdInput = document.getElementById('plant-id');
+    const plantId = plantIdInput.value ? parseInt(plantIdInput.value) : null;
+    
+    const payload = {
+        name: name
+    };
+    
+    // Dodaj plant_id do żądania tylko jeśli zostało podane
+    if (plantId) {
+        payload.plant_id = plantId;
+    }
 
-    const result = await apiCall('/api/plants', 'POST', { name }, true);
+    const result = await apiCall('/api/plants', 'POST', payload, true);
 
     if (result && !result.error) {
         console.log('Plant added:', result);
@@ -466,6 +527,26 @@ async function handleAddPlant(event) {
     }
 }
 
+// modified setupAddPlantForm to include plant_id input
+function setupAddPlantForm() {
+    const addPlantForm = document.getElementById('add-plant-form');
+    
+    addPlantForm.innerHTML = `
+        <h3>Add New Plant</h3>
+        <div class="form-group">
+            <label for="plant-name">Plant Name:</label>
+            <input type="text" id="plant-name" name="plant-name" required>
+        </div>
+        <div class="form-group">
+            <label for="plant-id">Plant ID (optional):</label>
+            <input type="number" id="plant-id" name="plant-id" min="1">
+            <small>Leave blank for auto-generated ID. Set this only if you need to match a specific device.</small>
+        </div>
+        <button type="submit" class="submit-button" style="margin-top: 10px;">Add Plant</button>
+        <p id="add-plant-error" class="error-message"></p>
+    `;
+}
+
 // --- Initialization ---
 
 function init() {
@@ -473,6 +554,9 @@ function init() {
     registerForm.addEventListener('submit', handleRegister);
     addPlantForm.addEventListener('submit', handleAddPlant);
     logoutButton.addEventListener('click', logout);
+    
+    // Dodaj tę linię aby utworzyć formularz z polem plant_id
+    setupAddPlantForm();
 
     const token = getToken();
     if (token) {

@@ -151,7 +151,11 @@ def create_plant():
     current_user_id = get_jwt_identity()
     data = request.get_json()
     name = data.get("name")
-
+    plant_id = data.get("plant_id")
+    if plant_id:
+        existing_plant = Plant.query.get(plant_id)
+        if existing_plant:
+            return jsonify({"error": "Plant ID already exists"}), 409
     if not name:
         return jsonify({"error": "Plant name is required"}), 400
 
@@ -159,10 +163,35 @@ def create_plant():
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    new_plant = Plant(name=name, user_id=current_user_id)
+    #new_plant = Plant(name=name, user_id=current_user_id)
+    if plant_id:
+        new_plant = Plant(id=plant_id, name=name, user_id=current_user_id)
+    else:
+        new_plant = Plant(name=name, user_id=current_user_id)
     db.session.add(new_plant)
     db.session.commit()
     return jsonify({"id": new_plant.id, "name": new_plant.name, "user_id": new_plant.user_id}), 201
+
+@app.route("/api/plants/<int:plant_id>", methods=["DELETE"])
+@jwt_required()
+def delete_plant(plant_id):
+    current_user_id = get_jwt_identity()
+    plant = Plant.query.filter_by(id=plant_id, user_id=current_user_id).first()
+    
+    if plant is None:
+        return jsonify({"error": "Plant not found or access denied"}), 404
+    
+    try:
+        # Usuń wszystkie pomiary powiązane z rośliną
+        Measurement.query.filter_by(plant_id=plant_id).delete()
+        # Usuń roślinę
+        db.session.delete(plant)
+        db.session.commit()
+        return jsonify({"msg": "Plant deleted successfully"}), 200
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error during plant deletion: {e}")
+        return jsonify({"error": "Failed to delete plant"}), 500
 
 @app.route("/api/measurements/<int:plant_id>")
 @jwt_required()
@@ -198,6 +227,15 @@ def manual_water(plant_id):
                  json.dumps({"duration_ms": duration}), qos=1)
     print(f"Manual water command sent to plant {plant_id} for {duration}ms by user {current_user_id}")
     return {"status": "queued"}, 202
+
+@app.route("/api/plants/ids", methods=["GET"])
+@jwt_required()
+def get_plant_ids():
+    """Return list of plant IDs that belong to the current user"""
+    current_user_id = get_jwt_identity()
+    plants = Plant.query.filter_by(user_id=current_user_id).all()
+    plant_ids = [plant.id for plant in plants]
+    return jsonify({"plant_ids": plant_ids})
 
 # --- Frontend Serving Routes ----------------------------------------
 
