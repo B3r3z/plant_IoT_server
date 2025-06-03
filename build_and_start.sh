@@ -1,11 +1,16 @@
 #!/bin/bash
 
-# Script to start the backend and sim services in detached mode
+# Stop and remove existing containers to start fresh
+echo "Stopping existing containers..."
+docker-compose down
 
-echo "Starting backend and sim services..."
+# Optionally remove volumes if you want a completely fresh start
+echo "Removing volumes..."
+docker volume rm server_backedn_postgres-data server_backedn_mosquitto-data 2>/dev/null || true
 
-docker-compose up --build -d backend sim
+echo "Building and starting all services..."
+# Build and start ALL services, not just backend and sim
+docker-compose up --build -d
 
-echo "Services backend and sim should be starting."
-echo "Use 'docker-compose logs -f backend sim' to view logs."
-
+echo "All services should be starting now."
+echo "Use 'docker-compose logs -f' to view logs."
